@@ -8,11 +8,32 @@ export default async function handler(req, res) {
   const { action, imageBase64, mediaType, prompt, predictionId } = req.body;
   const CLAUDE_KEY = process.env.ANTHROPIC_API_KEY;
   const REPLICATE_KEY = process.env.REPLICATE_API_TOKEN;
+  const INAT_USER = process.env.INAT_USERNAME;
+  const INAT_PASS = process.env.INAT_PASSWORD;
 
   try {
 
     if (action === 'identify') {
-      // iNaturalist identifies species — completely FREE
+
+      // Step 1: Login to iNaturalist and get JWT token
+      const loginResp = await fetch('https://www.inaturalist.org/users/sign_in.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: { email: INAT_USER, password: INAT_PASS } })
+      });
+
+      if (!loginResp.ok) {
+        return res.status(500).json({ error: 'iNaturalist login failed: ' + loginResp.status });
+      }
+
+      const loginData = await loginResp.json();
+      const apiToken = loginData.api_token;
+
+      if (!apiToken) {
+        return res.status(500).json({ error: 'iNaturalist login failed: no token returned' });
+      }
+
+      // Step 2: Call iNaturalist computer vision with token
       const binaryStr = atob(imageBase64);
       const bytes = new Uint8Array(binaryStr.length);
       for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
@@ -22,11 +43,12 @@ export default async function handler(req, res) {
 
       const inatResp = await fetch('https://api.inaturalist.org/v1/computervision/score_image', {
         method: 'POST',
+        headers: { 'Authorization': apiToken },
         body: formData
       });
 
       if (!inatResp.ok) {
-        return res.status(500).json({ error: 'iNaturalist error ' + inatResp.status });
+        return res.status(500).json({ error: 'iNaturalist vision error: ' + inatResp.status });
       }
 
       const inatData = await inatResp.json();
@@ -40,6 +62,7 @@ export default async function handler(req, res) {
       const obsCount = taxon.observations_count || 0;
       const iconicGroup = taxon.iconic_taxon_name || 'Unknown';
 
+      // Step 3: Calculate rarity from observation count
       let rarity;
       if (obsCount > 500000) rarity = 1;
       else if (obsCount > 100000) rarity = 2;
@@ -50,7 +73,7 @@ export default async function handler(req, res) {
       const cs = taxon.conservation_status?.status_name?.toLowerCase() || '';
       if (cs.includes('endangered') || cs.includes('critical')) rarity = Math.min(5, rarity + 1);
 
-      // Claude Haiku generates lore + stats — costs ~$0.0003 per call
+      // Step 4: Claude Haiku generates lore + stats (~$0.0003 per call)
       const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -64,9 +87,9 @@ export default async function handler(req, res) {
           messages: [{
             role: 'user',
             content: `Fantasy game designer. Animal: ${commonName} (${latinName}), group: ${iconicGroup}, rarity: ${rarity}/5.
-Respond ONLY with JSON:
-{"spiritName":"Vulpes Ignis","atk":78,"def":45,"spd":92,"abilities":["Ember Trail","Cunning Strike"],"lore":"One vivid mystical sentence.","imagePrompt":"A ${commonName}, fantasy spirit form, bioluminescent glowing patterns on body, magical runes, ethereal light wisps, dark forest, cinematic painterly illustration 4k"}
-spiritName=Latin genus + Ignis/Umbra/Spectra/Fulgur/Aether/Noctis. Stats 40-99 from real traits.`
+Respond ONLY with JSON, no markdown:
+{"spiritName":"Vulpes Ignis","atk":78,"def":45,"spd":92,"abilities":["Ember Trail","Cunning Strike"],"lore":"One vivid mystical sentence about this spirit.","imagePrompt":"A ${commonName}, fantasy spirit form, bioluminescent glowing patterns on body, magical runes, ethereal light wisps, dark mystical forest, cinematic painterly illustration 4k"}
+spiritName=Latin genus + Ignis/Umbra/Spectra/Fulgur/Aether/Noctis. Stats 40-99 from real traits. Abilities count = rarity.`
           }]
         })
       });
@@ -78,23 +101,24 @@ spiritName=Latin genus + Ignis/Umbra/Spectra/Fulgur/Aether/Noctis. Stats 40-99 f
         try { gameData = JSON.parse(text.replace(/```json|```/g, '').trim()); } catch(e) {}
       }
 
+      // Fallback if Claude fails
       if (!gameData) {
         const genus = latinName.split(' ')[0] || 'Spiritus';
         const sfx = ['Umbra','Ignis','Spectra','Fulgur','Aether','Noctis'];
         const pools = {
-          Aves:['Aerial Strike','Wind Ride','Keen Eye','Storm Call'],
-          Mammalia:['Pack Bond','Night Sense','Primal Roar','Endurance'],
-          Reptilia:['Scale Guard','Cold Patience','Camouflage','Venom Fang'],
-          Amphibia:['Regeneration','Void Breath','Skin Pulse','Mist Form'],
-          Insecta:['Swarm Mind','Metamorphosis','Pheromone','Compound Eye'],
-          default:['Spirit Pulse','Ancient Bond','Aura Burst','Elemental Touch']
+          Aves: ['Aerial Strike','Wind Ride','Keen Eye','Storm Call'],
+          Mammalia: ['Pack Bond','Night Sense','Primal Roar','Endurance'],
+          Reptilia: ['Scale Guard','Cold Patience','Camouflage','Venom Fang'],
+          Amphibia: ['Regeneration','Void Breath','Skin Pulse','Mist Form'],
+          Insecta: ['Swarm Mind','Metamorphosis','Pheromone','Compound Eye'],
+          default: ['Spirit Pulse','Ancient Bond','Aura Burst','Elemental Touch']
         };
         const pool = pools[iconicGroup] || pools.default;
         gameData = {
-          spiritName: genus + ' ' + sfx[Math.floor(Math.random()*sfx.length)],
-          atk: 40+rarity*10, def: 40+rarity*8, spd: 40+rarity*9,
+          spiritName: genus + ' ' + sfx[Math.floor(Math.random() * sfx.length)],
+          atk: 40 + rarity * 10, def: 40 + rarity * 8, spd: 40 + rarity * 9,
           abilities: pool.slice(0, Math.min(rarity, pool.length)),
-          lore: `A ${rarity>=4?'legendary':'rare'} spirit born from the ancient essence of the ${commonName}.`,
+          lore: `A ${rarity >= 4 ? 'legendary' : 'rare'} spirit born from the ancient essence of the ${commonName}.`,
           imagePrompt: `A ${commonName}, fantasy spirit form, bioluminescent glowing patterns, magical runes, ethereal light wisps, dark mystical forest, cinematic lighting, painterly illustration, 4k`
         };
       }
