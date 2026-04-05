@@ -8,72 +8,10 @@ export default async function handler(req, res) {
   const { action, imageBase64, mediaType, prompt, predictionId } = req.body;
   const CLAUDE_KEY = process.env.ANTHROPIC_API_KEY;
   const REPLICATE_KEY = process.env.REPLICATE_API_TOKEN;
-  const INAT_USER = process.env.INAT_USERNAME;
-  const INAT_PASS = process.env.INAT_PASSWORD;
 
   try {
 
     if (action === 'identify') {
-
-      // Step 1: Login to iNaturalist and get JWT token
-      const loginResp = await fetch('https://www.inaturalist.org/users/sign_in.json', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: { email: INAT_USER, password: INAT_PASS } })
-      });
-
-      if (!loginResp.ok) {
-        return res.status(500).json({ error: 'iNaturalist login failed: ' + loginResp.status });
-      }
-
-      const loginData = await loginResp.json();
-      const apiToken = loginData.api_token;
-
-      if (!apiToken) {
-        return res.status(500).json({ error: 'iNaturalist login failed: no token returned' });
-      }
-
-      // Step 2: Call iNaturalist computer vision with token
-      const binaryStr = atob(imageBase64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-      const blob = new Blob([bytes], { type: mediaType });
-      const formData = new FormData();
-      formData.append('image', blob, 'photo.jpg');
-
-      const inatResp = await fetch('https://api.inaturalist.org/v1/computervision/score_image', {
-        method: 'POST',
-        headers: { 'Authorization': apiToken },
-        body: formData
-      });
-
-      if (!inatResp.ok) {
-        return res.status(500).json({ error: 'iNaturalist vision error: ' + inatResp.status });
-      }
-
-      const inatData = await inatResp.json();
-      const results = inatData.results || [];
-      if (!results.length) return res.status(200).json({ found: false });
-
-      const top = results[0];
-      const taxon = top.taxon || {};
-      const commonName = taxon.preferred_common_name || taxon.name || 'Unknown Species';
-      const latinName = taxon.name || '';
-      const obsCount = taxon.observations_count || 0;
-      const iconicGroup = taxon.iconic_taxon_name || 'Unknown';
-
-      // Step 3: Calculate rarity from observation count
-      let rarity;
-      if (obsCount > 500000) rarity = 1;
-      else if (obsCount > 100000) rarity = 2;
-      else if (obsCount > 20000) rarity = 3;
-      else if (obsCount > 3000) rarity = 4;
-      else rarity = 5;
-
-      const cs = taxon.conservation_status?.status_name?.toLowerCase() || '';
-      if (cs.includes('endangered') || cs.includes('critical')) rarity = Math.min(5, rarity + 1);
-
-      // Step 4: Claude Haiku generates lore + stats (~$0.0003 per call)
       const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -83,47 +21,57 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 400,
+          max_tokens: 600,
           messages: [{
             role: 'user',
-            content: `Fantasy game designer. Animal: ${commonName} (${latinName}), group: ${iconicGroup}, rarity: ${rarity}/5.
-Respond ONLY with JSON, no markdown:
-{"spiritName":"Vulpes Ignis","atk":78,"def":45,"spd":92,"abilities":["Ember Trail","Cunning Strike"],"lore":"One vivid mystical sentence about this spirit.","imagePrompt":"A ${commonName}, fantasy spirit form, bioluminescent glowing patterns on body, magical runes, ethereal light wisps, dark mystical forest, cinematic painterly illustration 4k"}
-spiritName=Latin genus + Ignis/Umbra/Spectra/Fulgur/Aether/Noctis. Stats 40-99 from real traits. Abilities count = rarity.`
+            content: [
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: mediaType, data: imageBase64 }
+              },
+              {
+                type: 'text',
+                text: `You are a wildlife biologist and fantasy game designer. Analyze this image.
+
+If no wild animal is visible (human, pet, object, landscape only), return exactly: {"found":false}
+
+If a wild animal is visible, return ONLY this JSON with no markdown or explanation:
+{
+  "found": true,
+  "commonName": "Red Fox",
+  "latinName": "Vulpes vulpes",
+  "rarity": 2,
+  "atk": 78,
+  "def": 45,
+  "spd": 92,
+  "abilities": ["Ember Trail", "Cunning Strike", "Night Sense"],
+  "spiritName": "Vulpes Ignis",
+  "lore": "Its russet coat holds the memory of autumn fires, leaving warmth in the coldest snow.",
+  "imagePrompt": "A red fox, fantasy spirit form, bioluminescent amber glowing patterns on fur, magical runes etched into body, ethereal wisps of orange light, realistic anatomy, dark mystical forest background, cinematic lighting, detailed painterly illustration, 4k"
+}
+
+Rules:
+- rarity: 1=Common(pigeons/sparrows/squirrels), 2=Uncommon, 3=Rare, 4=Epic, 5=Mythic(endangered)
+- stats 40-99 based on real animal traits
+- spiritName = real Latin genus + one of: Ignis/Umbra/Spectra/Fulgur/Aether/Noctis/Solaris/Verdant
+- abilities count equals rarity (1 ability if rarity 1, up to 4-5 if rarity 4-5)
+- imagePrompt should describe the specific animal with magical/bioluminescent elements`
+              }
+            ]
           }]
         })
       });
 
-      let gameData;
-      if (claudeResp.ok) {
-        const cd = await claudeResp.json();
-        const text = cd.content.find(b => b.type === 'text')?.text || '';
-        try { gameData = JSON.parse(text.replace(/```json|```/g, '').trim()); } catch(e) {}
+      if (!claudeResp.ok) {
+        const err = await claudeResp.json();
+        return res.status(500).json({ error: err.error?.message || 'Claude API error ' + claudeResp.status });
       }
 
-      // Fallback if Claude fails
-      if (!gameData) {
-        const genus = latinName.split(' ')[0] || 'Spiritus';
-        const sfx = ['Umbra','Ignis','Spectra','Fulgur','Aether','Noctis'];
-        const pools = {
-          Aves: ['Aerial Strike','Wind Ride','Keen Eye','Storm Call'],
-          Mammalia: ['Pack Bond','Night Sense','Primal Roar','Endurance'],
-          Reptilia: ['Scale Guard','Cold Patience','Camouflage','Venom Fang'],
-          Amphibia: ['Regeneration','Void Breath','Skin Pulse','Mist Form'],
-          Insecta: ['Swarm Mind','Metamorphosis','Pheromone','Compound Eye'],
-          default: ['Spirit Pulse','Ancient Bond','Aura Burst','Elemental Touch']
-        };
-        const pool = pools[iconicGroup] || pools.default;
-        gameData = {
-          spiritName: genus + ' ' + sfx[Math.floor(Math.random() * sfx.length)],
-          atk: 40 + rarity * 10, def: 40 + rarity * 8, spd: 40 + rarity * 9,
-          abilities: pool.slice(0, Math.min(rarity, pool.length)),
-          lore: `A ${rarity >= 4 ? 'legendary' : 'rare'} spirit born from the ancient essence of the ${commonName}.`,
-          imagePrompt: `A ${commonName}, fantasy spirit form, bioluminescent glowing patterns, magical runes, ethereal light wisps, dark mystical forest, cinematic lighting, painterly illustration, 4k`
-        };
-      }
-
-      return res.status(200).json({ found: true, commonName, latinName, rarity, ...gameData });
+      const data = await claudeResp.json();
+      const text = data.content.find(b => b.type === 'text')?.text || '';
+      const clean = text.replace(/```json|```/g, '').trim();
+      const result = JSON.parse(clean);
+      return res.status(200).json(result);
     }
 
     if (action === 'generate_image') {
