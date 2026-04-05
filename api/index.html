@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WildSpirit</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet"/>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root { --gold: #c9a84c; --gold-light: #e8d28a; --bg: #080d18; --surface: #111827; --text: #e8e0d0; --text-muted: #8a9ab8; }
+body { background: var(--bg); font-family: 'Crimson Pro', Georgia, serif; color: var(--text); min-height: 100vh; }
+body::before { content:''; position:fixed; inset:0; background: radial-gradient(ellipse at 20% 20%, rgba(201,168,76,0.04), transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(96,165,250,0.04), transparent 60%); pointer-events:none; }
+.app { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; position: relative; }
+.header { text-align: center; margin-bottom: 2.5rem; }
+.header h1 { font-family: 'Cinzel', serif; font-size: 2.4rem; font-weight: 600; letter-spacing: 0.2em; background: linear-gradient(135deg, #e8d28a, #c9a84c, #e8d28a); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.header p { color: var(--text-muted); font-size: 1rem; margin-top: 0.5rem; font-style: italic; }
+.header-divider { width: 120px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); margin: 1rem auto 0; }
+.upload-zone { border: 1.5px dashed rgba(201,168,76,0.5); border-radius: 16px; padding: 2.5rem; text-align: center; cursor: pointer; transition: all 0.3s; background: rgba(201,168,76,0.03); position: relative; overflow: hidden; }
+.upload-zone:hover, .upload-zone.dragover { background: rgba(201,168,76,0.08); border-color: var(--gold); }
+.upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.upload-icon { font-size: 3rem; margin-bottom: 1rem; }
+.upload-zone h3 { font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--gold-light); margin-bottom: 0.5rem; letter-spacing: 0.06em; }
+.upload-zone p { color: var(--text-muted); font-size: 0.88rem; }
+.analyzing { text-align: center; padding: 3rem 1rem; }
+.spin { animation: spin 1.5s linear infinite; display: inline-block; font-size: 2.5rem; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.scan-label { font-family: 'Cinzel', serif; color: var(--gold-light); letter-spacing: 0.12em; font-size: 0.9rem; margin-top: 1.25rem; }
+.scan-steps { display: flex; flex-direction: column; gap: 0.5rem; max-width: 340px; margin: 1.5rem auto 0; }
+.scan-step { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.85rem; border-radius: 8px; background: rgba(255,255,255,0.03); border: 0.5px solid rgba(255,255,255,0.07); font-size: 0.82rem; color: var(--text-muted); transition: all 0.4s; }
+.scan-step.active { color: var(--gold-light); border-color: rgba(201,168,76,0.35); background: rgba(201,168,76,0.07); }
+.scan-step.done { color: #4ade80; border-color: rgba(74,222,128,0.3); background: rgba(74,222,128,0.05); }
+.step-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.result-layout { display: grid; grid-template-columns: 1fr 1.35fr; gap: 1.75rem; align-items: start; }
+@media(max-width:640px){ .result-layout { grid-template-columns: 1fr; } }
+.photo-col { display: flex; flex-direction: column; gap: 1rem; }
+.img-frame { border-radius: 14px; overflow: hidden; position: relative; background: var(--surface); min-height: 200px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(201,168,76,0.3); }
+.img-frame img { width: 100%; display: block; max-height: 270px; object-fit: cover; }
+.frame-label { position: absolute; top: 8px; left: 8px; font-size: 0.68rem; font-family: 'Cinzel', serif; letter-spacing: 0.08em; padding: 3px 9px; border-radius: 4px; background: rgba(0,0,0,0.7); border: 0.5px solid; }
+.generating-msg { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 2.5rem 1rem; color: var(--text-muted); font-size: 0.82rem; font-style: italic; }
+.spirit-card { border-radius: 18px; border: 1px solid; padding: 1.5rem; position: relative; overflow: hidden; }
+.spirit-card::after { content:'✦'; position:absolute; bottom:-20px; right:-10px; font-size:8rem; opacity:0.025; pointer-events:none; }
+.rarity-badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 4px 14px; font-size: 0.72rem; font-family: 'Cinzel', serif; letter-spacing: 0.1em; border: 1px solid; margin-bottom: 0.8rem; }
+.stars { display: flex; gap: 4px; margin-bottom: 0.7rem; }
+.spirit-name { font-family: 'Cinzel', serif; font-size: 1.55rem; font-weight: 600; line-height: 1.2; margin-bottom: 0.25rem; }
+.spirit-latin { font-style: italic; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin: 1rem 0; }
+.stat-box { background: rgba(255,255,255,0.04); border-radius: 8px; padding: 0.55rem; text-align: center; border: 0.5px solid rgba(255,255,255,0.08); }
+.stat-val { font-family: 'Cinzel', serif; font-size: 1.1rem; font-weight: 600; }
+.stat-label { font-size: 0.65rem; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.06em; }
+.ability-tag { display: inline-block; border-radius: 6px; padding: 3px 9px; font-size: 0.73rem; margin: 2px; border: 0.5px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); }
+.spirit-desc { font-size: 0.86rem; color: var(--text-muted); line-height: 1.65; font-style: italic; margin-top: 0.85rem; padding-top: 0.85rem; border-top: 0.5px solid rgba(255,255,255,0.09); }
+.action-row { display: flex; gap: 0.75rem; margin-top: 1.1rem; }
+.btn { flex: 1; padding: 0.65rem; border-radius: 10px; cursor: pointer; font-family: 'Cinzel', serif; font-size: 0.78rem; letter-spacing: 0.07em; transition: all 0.2s; border: 1px solid; }
+.btn-primary { background: var(--gold); color: #0a0f1a; border-color: var(--gold); font-weight: 600; }
+.btn-primary:hover { background: var(--gold-light); }
+.btn-secondary { background: transparent; color: var(--gold); border-color: rgba(201,168,76,0.5); }
+.btn-secondary:hover { background: rgba(201,168,76,0.09); }
+.error-box { background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.3); border-radius: 12px; padding: 1rem 1.25rem; font-size: 0.85rem; color: #fca5a5; line-height: 1.7; }
+.hidden { display: none !important; }
+.fade-in { animation: fadeUp 0.5s ease; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>✦ WILDSPIRIT ✦</h1>
+    <p>Photograph the wild — awaken the spirit within</p>
+    <div class="header-divider"></div>
+  </div>
+
+  <div id="uploadSection">
+    <div class="upload-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="image/*"/>
+      <div class="upload-icon">🌿</div>
+      <h3>Upload a wildlife photo</h3>
+      <p>Claude AI identifies the species · Replicate generates your spirit</p>
+    </div>
+  </div>
+
+  <div id="analyzingSection" class="hidden">
+    <div class="analyzing">
+      <div class="spin">✦</div>
+      <p class="scan-label" id="mainScanText">ANALYZING...</p>
+      <div class="scan-steps">
+        <div class="scan-step" id="step1"><div class="step-dot"></div>Claude AI identifying species</div>
+        <div class="scan-step" id="step2"><div class="step-dot"></div>Calculating rarity score</div>
+        <div class="scan-step" id="step3"><div class="step-dot"></div>Generating spirit with Replicate</div>
+        <div class="scan-step" id="step4"><div class="step-dot"></div>Forging spirit card</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultSection" class="hidden fade-in">
+    <div class="result-layout">
+      <div class="photo-col">
+        <div class="img-frame">
+          <img id="previewImg" src="" alt="Your photo"/>
+          <div class="frame-label" style="color:#4ade80;border-color:rgba(74,222,128,0.4);">📷 YOUR PHOTO</div>
+        </div>
+        <div class="img-frame" id="spiritImgFrame">
+          <div class="generating-msg" id="spiritImgLoading">
+            <span class="spin" style="font-size:1.4rem;">✦</span>
+            <span>Generating spirit illustration...</span>
+            <span style="font-size:0.74rem;opacity:0.55;">~20–40 seconds</span>
+          </div>
+          <img id="spiritImg" src="" alt="Spirit" class="hidden"/>
+          <div class="frame-label hidden" id="spiritImgLabel" style="color:var(--gold);border-color:rgba(201,168,76,0.4);">✦ SPIRIT FORM</div>
+        </div>
+      </div>
+      <div>
+        <div class="spirit-card" id="spiritCard">
+          <div class="rarity-badge" id="rarityBadge"></div>
+          <div class="stars" id="starsRow"></div>
+          <div class="spirit-name" id="spiritName"></div>
+          <div class="spirit-latin" id="spiritLatin"></div>
+          <div class="stats-grid">
+            <div class="stat-box"><div class="stat-val" id="statAtk"></div><div class="stat-label">ATTACK</div></div>
+            <div class="stat-box"><div class="stat-val" id="statDef"></div><div class="stat-label">DEFENSE</div></div>
+            <div class="stat-box"><div class="stat-val" id="statSpd"></div><div class="stat-label">SPEED</div></div>
+          </div>
+          <div id="abilitiesRow"></div>
+          <div class="spirit-desc" id="spiritDesc"></div>
+          <div class="action-row">
+            <button class="btn btn-primary" id="captureBtn" onclick="captureSpirit()">✦ Capture Spirit</button>
+            <button class="btn btn-secondary" onclick="resetApp()">New Photo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="errorSection" class="hidden">
+    <div class="error-box" id="errorMsg"></div>
+    <button class="btn btn-secondary" style="margin-top:1rem;max-width:180px;" onclick="resetApp()">Try Again</button>
+  </div>
+</div>
+
+<script>
+const RARITY_CONFIG = {
+  1:{label:'Common',color:'#94a3b8'},2:{label:'Uncommon',color:'#4ade80'},
+  3:{label:'Rare',color:'#60a5fa'},4:{label:'Epic',color:'#c084fc'},5:{label:'Mythic',color:'#f472b6'}
+};
+const CARD_THEME = {
+  1:{bg:'rgba(148,163,184,0.07)',border:'rgba(148,163,184,0.3)',text:'#cbd5e1'},
+  2:{bg:'rgba(74,222,128,0.07)',border:'rgba(74,222,128,0.3)',text:'#86efac'},
+  3:{bg:'rgba(96,165,250,0.07)',border:'rgba(96,165,250,0.35)',text:'#93c5fd'},
+  4:{bg:'rgba(192,132,252,0.08)',border:'rgba(192,132,252,0.4)',text:'#d8b4fe'},
+  5:{bg:'rgba(244,114,182,0.09)',border:'rgba(244,114,182,0.5)',text:'#f9a8d4'}
+};
+
+function show(id){document.getElementById(id).classList.remove('hidden');}
+function hide(id){document.getElementById(id).classList.add('hidden');}
+function setStep(n){
+  for(let i=1;i<=4;i++){
+    const el=document.getElementById('step'+i);
+    el.classList.remove('active','done');
+    if(i<n)el.classList.add('done');
+    else if(i===n)el.classList.add('active');
+  }
+}
+async function toBase64(file){
+  return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);});
+}
+
+async function callAPI(body){
+  const resp=await fetch('/api/identify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!resp.ok){const e=await resp.json();throw new Error(e.error||'Server error');}
+  return resp.json();
+}
+
+function renderCard(d){
+  const rc=RARITY_CONFIG[d.rarity],th=CARD_THEME[d.rarity];
+  const card=document.getElementById('spiritCard');
+  card.style.background=th.bg;card.style.borderColor=th.border;
+  const badge=document.getElementById('rarityBadge');
+  badge.textContent='⬡ '+rc.label.toUpperCase();
+  badge.style.color=rc.color;badge.style.borderColor=rc.color+'55';badge.style.background=rc.color+'15';
+  document.getElementById('starsRow').innerHTML=Array.from({length:5},(_,i)=>
+    `<span style="display:inline-block;width:14px;height:14px;"><svg viewBox="0 0 14 14" fill="${i<d.rarity?rc.color:'none'}" stroke="${i<d.rarity?rc.color:'#333'}" stroke-width="1.5"><polygon points="7,1 8.8,5.5 13.5,5.5 9.8,8.5 11.2,13 7,10 2.8,13 4.2,8.5 0.5,5.5 5.2,5.5"/></svg></span>`
+  ).join('');
+  document.getElementById('spiritName').textContent=d.spiritName;
+  document.getElementById('spiritName').style.color=th.text;
+  document.getElementById('spiritLatin').textContent=d.latinName+' · '+d.commonName;
+  document.getElementById('statAtk').textContent=d.atk;
+  document.getElementById('statDef').textContent=d.def;
+  document.getElementById('statSpd').textContent=d.spd;
+  ['statAtk','statDef','statSpd'].forEach(id=>document.getElementById(id).style.color=th.text);
+  document.getElementById('abilitiesRow').innerHTML=d.abilities.map(a=>
+    `<span class="ability-tag" style="color:${th.text};border-color:${th.border}">${a}</span>`).join('');
+  document.getElementById('spiritDesc').textContent=d.lore;
+  document.getElementById('spiritImgFrame').style.borderColor=th.border;
+}
+
+async function processImage(file){
+  hide('uploadSection');show('analyzingSection');
+  const imgDataUrl=await toBase64(file);
+  document.getElementById('previewImg').src=imgDataUrl;
+  const base64=imgDataUrl.split(',')[1];
+  const mediaType=imgDataUrl.split(';')[0].split(':')[1];
+
+  setStep(1);document.getElementById('mainScanText').textContent='IDENTIFYING SPECIES...';
+  let d;
+  try{d=await callAPI({action:'identify',imageBase64:base64,mediaType});}
+  catch(e){showError('Identification failed: '+e.message);return;}
+  if(!d.found){showError('No wildlife detected. Please upload a clear photo with an animal as the main subject.');return;}
+
+  setStep(2);document.getElementById('mainScanText').textContent='CALCULATING RARITY...';
+  await new Promise(r=>setTimeout(r,600));
+
+  setStep(3);document.getElementById('mainScanText').textContent='GENERATING SPIRIT FORM...';
+  hide('analyzingSection');show('resultSection');
+  renderCard(d);
+
+  try{
+    const {predictionId}=await callAPI({action:'generate_image',prompt:d.imagePrompt});
+    for(let i=0;i<60;i++){
+      await new Promise(r=>setTimeout(r,2000));
+      const {status,output}=await callAPI({action:'poll_image',predictionId});
+      if(status==='succeeded'){
+        document.getElementById('spiritImgLoading').style.display='none';
+        const img=document.getElementById('spiritImg');
+        img.src=output[0];img.classList.remove('hidden');
+        document.getElementById('spiritImgLabel').classList.remove('hidden');
+        break;
+      }
+      if(status==='failed') throw new Error('Image generation failed');
+    }
+  }catch(e){
+    document.getElementById('spiritImgLoading').innerHTML=
+      `<span style="color:#f87171;font-size:0.78rem;">Spirit image unavailable: ${e.message.slice(0,80)}</span>`;
+  }
+}
+
+function captureSpirit(){
+  const btn=document.getElementById('captureBtn');
+  btn.textContent='✦ Captured!';btn.style.background='#4ade80';btn.style.borderColor='#4ade80';btn.style.color='#0a0f1a';
+  setTimeout(()=>{btn.textContent='✦ Capture Spirit';btn.style.background='var(--gold)';btn.style.borderColor='var(--gold)';btn.style.color='#0a0f1a';},2500);
+}
+function showError(msg){hide('analyzingSection');hide('uploadSection');document.getElementById('errorMsg').textContent=msg;show('errorSection');}
+function resetApp(){hide('resultSection');hide('errorSection');hide('analyzingSection');show('uploadSection');document.getElementById('fileInput').value='';}
+
+document.getElementById('fileInput').addEventListener('change',e=>{const f=e.target.files[0];if(f)processImage(f);});
+const dz=document.getElementById('dropZone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('dragover');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover');const f=e.dataTransfer.files[0];if(f&&f.type.startsWith('image/'))processImage(f);});
+</script>
+</body>
+</html>
